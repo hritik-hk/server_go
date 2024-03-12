@@ -4,22 +4,35 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strings"
 	"time"
 )
 
-func do(conn net.Conn) {
-	request := make([]byte, 1024)
+const threadPool_Size = 100
+
+func handleConnection(conn net.Conn) {
+	requestBuffer := make([]byte, 2048)
 
 	// Read the HTTP request
-	conn.Read(request)
+	n, err := conn.Read(requestBuffer)
+	if err != nil {
+		log.Printf("Error reading request: %v\n", err)
+		conn.Close()
+		return
+	}
+
+	request := string(requestBuffer[:n])
+
+	client := strings.Split(request, "\n")[7:8]
 
 	// Mimicking Long-running Job
-	log.Println("processing the request...")
+	log.Printf("processing the request... client- %v ", client[0])
 	time.Sleep(5 * time.Second)
 
 	// Returning the response and closing
-	log.Println("processing complete...")
-	conn.Write([]byte("HTTP/1.1 200 OK\r\n\r\nHello, World!\r\n"))
+	log.Printf("processing complete... client- %v ", client[0])
+	resp := fmt.Sprintf("HTTP/1.1 200 OK\r\n\r\nHello, client %v \r\n", client[0])
+	conn.Write([]byte(resp))
 	conn.Close()
 }
 
@@ -37,14 +50,22 @@ func main() {
 	defer listener.Close()
 	log.Printf("Listening on PORT : %v", PORT)
 
+	pool := threadPool(threadPool_Size)
+
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
 			fmt.Println(err)
 			continue
 		}
-		log.Println("new client connected")
+		log.Printf("new client connected")
 
-		go do(conn)
+		go handleConnection(conn)
+
+		job := func() {
+			handleConnection(conn)
+		}
+		pool.AddJob(job)
+
 	}
 }
